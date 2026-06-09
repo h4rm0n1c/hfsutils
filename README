@@ -116,17 +116,39 @@ NOTES ON "SETUID" INSTALLATION
 
 ===============================================================================
 
+HCOPY -R (RECURSIVE COPY)
+
+  This fork adds a `-R` flag to `hcopy` for recursive directory copies
+  from HFS volumes to Unix:
+
+    hcopy -m -R ":Directory:" /path/to/output/
+
+  This preserves the HFS directory tree on Unix, with each file copied
+  using the chosen transfer mode (-m MacBinary, -b BinHex, -t text, -r raw,
+  -a automatic). Subdirectories are created automatically, and filenames
+  are mangled for Unix filesystem safety (/ and space characters).
+
+  Without `-R`, `hcopy` rejects directories with "is a directory" (the
+  original behaviour).
+
+  The recursive walker uses the same libhfs API pattern as hls -R
+  (hfs_opendir/hfs_readdir/hfs_closedir with HFS_ISDIR checks).
+
+===============================================================================
+
 CONTACTING THE AUTHOR
 
-  Please see the `COPYRIGHT' file for copyright and warranty information.
+  Original author: Robert Leslie <rob@mars.org>
 
-  Send comments, bug reports, suggestions, patches, etc. to:
-
-    * Robert Leslie <rob@mars.org>
+  This fork maintained by: https://github.com/h4rm0n1c/hfsutils
 
   See also the HFS Utilities home page on the Web:
 
     * http://www.mars.org/home/rob/proj/hfs/
+
+  Fork home page:
+
+    * https://github.com/h4rm0n1c/hfsutils
 
 ===============================================================================
 

@@ -42,6 +42,8 @@
 
 extern int optind;
 
+static int hcopy_recursive = 0;		/* -R flag: recursively copy directories */
+
 /*
  * NAME:	automode_unix()
  * DESCRIPTION:	automatically choose copyin transfer mode for UNIX path
@@ -167,6 +169,9 @@ cpofunc automode_hfs(hfsvol *vol, const char *path)
   return cpo_macb;
 }
 
+static void hfs_basename(const char *, char *, size_t);
+static int  copyout_dir(hfsvol *, const char *, const char *, int);
+
 /*
  * NAME:	do_copyout()
  * DESCRIPTION:	copy files from HFS to UNIX
@@ -212,10 +217,45 @@ int do_copyout(hfsvol *vol, int argc, char *argv[], const char *dest, int mode)
       if (hfs_stat(vol, argv[i], &ent) != -1 &&
 	  (ent.flags & HFS_ISDIR))
 	{
-	  ERROR(EISDIR, 0);
-	  hfsutil_perrorp(argv[i]);
+	  if (hcopy_recursive)
+	    {
+	      char dirname[HFS_MAX_FLEN + 1];
+	      char unix_dir[1024];
+	      char *mp;
 
-	  result = 1;
+	      /* Extract HFS directory basename, mangle for Unix */
+	      hfs_basename(argv[i], dirname, sizeof(dirname));
+	      for (mp = dirname; *mp; ++mp)
+		{
+		  switch (*mp)
+		    {
+		    case '/': *mp = '-'; break;
+		    case ' ': *mp = '_'; break;
+		    }
+		}
+
+	      if (strlen(dest) + 1 + strlen(dirname) >= sizeof(unix_dir))
+		{
+		  ERROR(ENAMETOOLONG, 0);
+		  hfsutil_perrorp(argv[i]);
+		  result = 1;
+		  continue;
+		}
+
+	      sprintf(unix_dir, "%s/%s", dest, dirname);
+
+	      if (copyout_dir(vol, argv[i], unix_dir, mode) == -1)
+		{
+		  hfsutil_perrorp(argv[i]);
+		  result = 1;
+		}
+	    }
+	  else
+	    {
+	      ERROR(EISDIR, 0);
+	      hfsutil_perrorp(argv[i]);
+	      result = 1;
+	    }
 	}
       else
 	{
@@ -236,13 +276,148 @@ int do_copyout(hfsvol *vol, int argc, char *argv[], const char *dest, int mode)
 }
 
 /*
+ * NAME:	hfs_basename()
+ * DESCRIPTION:	Extract leaf name component from an HFS path (no colons).
+ *              ":Docs:"       -> "Docs"
+ *              ":Docs:Sub:"   -> "Sub"
+ *              ":"            -> "" (root)
+ */
+static
+void hfs_basename(const char *path, char *buf, size_t bufsz)
+{
+  const char *p, *last;
+  size_t len;
+
+  last = path;
+  for (p = path; *p; ++p)
+    {
+      if (*p == ':')
+	last = p + 1;
+    }
+
+  len = strlen(last);
+  while (len > 0 && last[len - 1] == ':')
+    --len;
+
+  if (len >= bufsz)
+    len = bufsz - 1;
+  memcpy(buf, last, len);
+  buf[len] = '\0';
+}
+
+/*
+ * NAME:	copyout_dir()
+ * DESCRIPTION:	Recursively copy an HFS directory tree to Unix.
+ *              Creates dest, then walks src and copies each entry using
+ *              the selected copyout mode (same semantics as do_copyout).
+ */
+static
+int copyout_dir(hfsvol *vol, const char *src, const char *dest, int mode)
+{
+  hfsdir *dir;
+  hfsdirent ent;
+  int result = 0;
+
+  /* Create the destination directory */
+  if (mkdir(dest, 0755) == -1 && errno != EEXIST)
+    {
+      ERROR(errno, "error creating directory");
+      return -1;
+    }
+
+  dir = hfs_opendir(vol, src);
+  if (dir == 0)
+    {
+      ERROR(errno, hfs_error);
+      return -1;
+    }
+
+  while (hfs_readdir(dir, &ent) != -1)
+    {
+      char hfs_path[1024];
+      size_t slen;
+
+      /* Build HFS path: parent_dir + child_name + (if dir, ":") */
+      slen = strlen(src);
+      if (slen + 1 + strlen(ent.name) + 2 > sizeof(hfs_path))
+	continue;
+
+      strcpy(hfs_path, src);
+      if (slen > 0 && src[slen - 1] != ':')
+	strcat(hfs_path, ":");
+      strcat(hfs_path, ent.name);
+
+      if (ent.flags & HFS_ISDIR)
+	{
+	  char mangled[HFS_MAX_FLEN + 1];
+	  char subdir[1024];
+	  char *mp;
+
+	  /* Mangle subdirectory name for Unix (same as opensrc in copyout.c) */
+	  strcpy(mangled, ent.name);
+	  for (mp = mangled; *mp; ++mp)
+	    {
+	      switch (*mp)
+		{
+		case '/': *mp = '-'; break;
+		case ' ': *mp = '_'; break;
+		}
+	    }
+
+	  if (strlen(dest) + 1 + strlen(mangled) >= sizeof(subdir))
+	    continue;
+
+	  sprintf(subdir, "%s/%s", dest, mangled);
+
+	  /* Append trailing colon to HFS path for subdirectory */
+	  slen = strlen(hfs_path);
+	  if (slen + 2 <= sizeof(hfs_path))
+	    {
+	      hfs_path[slen] = ':';
+	      hfs_path[slen + 1] = '\0';
+	    }
+
+	  if (copyout_dir(vol, hfs_path, subdir, mode) == -1)
+	    result = -1;
+	}
+      else
+	{
+	  cpofunc copyfile;
+
+	  /* Select copy function based on the user's mode */
+	  switch (mode)
+	    {
+	    case 'm': copyfile = cpo_macb;  break;
+	    case 'b': copyfile = cpo_binh;  break;
+	    case 't': copyfile = cpo_text;  break;
+	    case 'r': copyfile = cpo_raw;   break;
+	    case 'a':
+	    default:
+	      copyfile = automode_hfs(vol, hfs_path);
+	      break;
+	    }
+
+	  if (copyfile(vol, hfs_path, dest) == -1)
+	    {
+	      ERROR(errno, cpo_error);
+	      hfsutil_perrorp(hfs_path);
+	      result = -1;
+	    }
+	}
+    }
+
+  hfs_closedir(dir);
+  return result;
+}
+
+/*
  * NAME:	usage()
  * DESCRIPTION:	display usage message
  */
 static
 int usage(void)
 {
-  fprintf(stderr, "Usage: %s [-m|-b|-t|-r|-a] source-path [...] target-path\n",
+  fprintf(stderr, "Usage: %s [-m|-b|-t|-r|-a] [-R] source-path [...] target-path\n",
 	  argv0);
 
   return 1;
@@ -265,12 +440,16 @@ int hcopy_main(int argc, char *argv[])
     {
       int opt;
 
-      opt = getopt(argc, argv, "mbtra");
+      opt = getopt(argc, argv, "mbtraR");
       if (opt == EOF)
 	break;
 
       switch (opt)
 	{
+	case 'R':
+	  hcopy_recursive = 1;
+	  break;
+
 	case '?':
 	  return usage();
 

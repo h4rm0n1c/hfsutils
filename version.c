@@ -24,9 +24,9 @@
 const char hfsutils_rcsid[] =
   "$Id: version.c,v 1.11 1998/11/02 22:08:33 rob Exp $";
 
-const char hfsutils_version[]   = "hfsutils version 3.2.6";
-const char hfsutils_copyright[] = "Copyright (C) 1996-1998 Robert Leslie";
-const char hfsutils_author[]    = "Robert Leslie <rob@mars.org>";
+const char hfsutils_version[]   = "hfsutils version 3.2.6+h4rm0n1c-1";
+const char hfsutils_copyright[] = "Copyright (C) 1996-1998 Robert Leslie; 2026 h4rm0n1c";
+const char hfsutils_author[]    = "Robert Leslie <rob@mars.org>; h4rm0n1c <github@h4rm0n1c.com>";
 
 const char hfsutils_license[] =
   "This program is free software; you can redistribute it and/or modify it\n"

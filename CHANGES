@@ -6,6 +6,15 @@ $Id: CHANGES,v 1.14 1998/11/02 22:08:20 rob Exp $
 
 ===============================================================================
 
+Version 3.2.6+h4rm0n1c-1
+
+  * Added -R (recursive) flag to hcopy for copying entire HFS directory
+    trees to Unix. The directory structure is recreated on the target
+    filesystem, and each file is copied using the selected transfer mode.
+    Previously, hcopy rejected directories with "is a directory".
+
+    Usage: hcopy -m -R ":Directory:" /path/to/output/
+
 Version 3.2.6
 
   * Added casts and made other changes to satisfy fussy signed/unsigned

@@ -2,7 +2,7 @@
 .SH NAME
 hcopy \- copy files from or to an HFS volume
 .SH SYNOPSIS
-hcopy [-m|-b|-t|-r|-a]
+hcopy [-m|-b|-t|-r|-a] [-R]
 .I source-path
 [...]
 .I target-path
@@ -40,6 +40,15 @@ A mode will be chosen automatically for each file based on a set of predefined
 heuristics.
 .PP
 If no mode is specified, -a is assumed.
+.PP
+.RB -R
+.TP
+Recursive copy: if the source is an HFS directory, the entire directory
+tree is copied to the Unix filesystem. The directory hierarchy is
+recreated under the target path. Each file is copied using the selected
+transfer mode (or auto-detected with -a). Filenames are mangled for Unix
+filesystem compatibility. Without this flag, copying a directory causes
+an error ("is a directory").
 .PP
 If a UNIX source pathname is specified as a single dash (-),
 .B hcopy
